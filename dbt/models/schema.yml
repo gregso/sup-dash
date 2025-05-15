@@ -1,0 +1,105 @@
+version: 2
+
+sources:
+  - name: oracle
+    database: "{{ env_var('DBT_ORACLE_SERVICE') }}"
+    schema: "{{ env_var('DBT_ORACLE_SCHEMA') }}"
+    tables:
+      - name: SDRR_TASKACTIONS_CHAMPIONS
+        description: "Combined tasks and actions view from Oracle"
+        columns:
+          - name: TASK_ID
+            description: "Unique identifier for the task"
+          - name: CLIENT
+            description: "Client associated with the task"
+          - name: HISTORY
+            description: "Task history"
+          - name: STATUS12
+            description: "Status of the task"
+          - name: CREATEDDATETIME
+            description: "When the task was created"
+          - name: GROUP
+            description: "Group information"
+          - name: COMPANY
+            description: "Company information"
+          - name: POSITION
+            description: "Position information"
+          - name: JOB_CLASSIFICATION
+            description: "Job classification"
+          - name: EMAIL
+            description: "Employee email"
+          - name: DEPT_DESCR
+            description: "Department handling the task"
+          - name: DIV_DESCR
+            description: "Division handling the task"
+          - name: LIVEISSUE
+            description: "Flag indicating if task is a live issue (Y/N)"
+          - name: TASK_CLASS
+            description: "Task classification"
+          - name: ACT_NUMBER
+            description: "Number of actions for this task"
+          - name: PR_AC_SORT
+            description: "Action sort order"
+          - name: VIEWYN
+            description: "Action visibility flag"
+          - name: ACTDATETIME
+            description: "When the action was performed"
+          - name: ACTIONCODE12
+            description: "Code representing the action type"
+          - name: ACTEMPL
+            description: "Employee who performed the action"
+          - name: ASSIGNEDTO
+            description: "Employee assigned to the task"
+          - name: TMS_TASK_ID
+            description: "Task ID in the TMS system"
+          - name: PRODUCT
+            description: "Product information"
+
+models:
+  - name: task_analytics
+    description: "Processed task data for analytics"
+    columns:
+      - name: task_id
+        description: "Unique identifier for the task"
+        tests:
+          - not_null
+      - name: client
+        description: "Client associated with the task"
+        tests:
+          - not_null
+      - name: live_issue
+        description: "Flag indicating if task is a live issue (Y/N)"
+      - name: created_datetime
+        description: "When the task was created"
+      - name: last_action_datetime
+        description: "When the task was last actioned"
+      - name: last_action_code
+        description: "Code of the last action"
+      - name: last_action_employee
+        description: "Employee who performed the last action"
+      - name: department
+        description: "Department handling the task"
+      - name: assigned_to
+        description: "Employee assigned to the task"
+      - name: days_since_last_action
+        description: "Number of days since last action"
+      - name: product
+        description: "Product information"
+      - name: task_class
+        description: "Task classification"
+      - name: status
+        description: "Status of the task"
+      - name: division
+        description: "Division handling the task"
+
+  - name: exports_tasks_daily
+    description: "Daily CSV export of task analytics data"
+    config:
+      post-hook:
+        - "{{ export_csv('exports_tasks_daily', '/data/exports/tasks_daily.csv') }}"
+    columns:
+      - name: task_id
+        description: "Unique identifier for the task"
+      - name: client
+        description: "Client associated with the task"
+      # (rest of columns from task_analytics)
