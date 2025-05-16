@@ -1,86 +1,88 @@
 version: '3.8'
 
 services:
-  # Data processing service (DBT)
-  dbt:
-    build:
-      context: ./dbt
-      dockerfile: Dockerfile
-    volumes:
-      - ./dbt:/app
-      - ./data/exports:/data/exports
-    environment:
-      - DBT_ORACLE_USER=${DBT_ORACLE_USER}
-      - DBT_ORACLE_PASSWORD=${DBT_ORACLE_PASSWORD}
-      - DBT_ORACLE_HOST=${DBT_ORACLE_HOST}
-      - DBT_ORACLE_PORT=${DBT_ORACLE_PORT}
-      - DBT_ORACLE_SERVICE=${DBT_ORACLE_SERVICE}
-      - DBT_ORACLE_SCHEMA=${DBT_ORACLE_SCHEMA}
-    command: tail -f /dev/null # Keep container running for manual dbt execution
-
-  # Ollama LLM service - optimized for Colima on Apple Silicon
-  ollama:
-    image: ollama/ollama:latest
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
     ports:
-      - "11434:11434"
+      - "8123:8123"
+      - "9000:9000"
     volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    # When using Colima, hardware acceleration for Ollama is done at the VM level
-    # No NVIDIA GPU requirements or specific environment variables needed here
+      - ./clickhouse/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - clickhouse-data:/var/lib/clickhouse
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+    networks:
+      - analytics-network
 
-  # FastAPI Backend
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+  oracle-sync:
+    build: ./oracle-sync
+    container_name: oracle-sync
+    depends_on:
+      - clickhouse
+    environment:
+      - ORACLE_USER=${ORACLE_USER}
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD}
+      - ORACLE_DSN=${ORACLE_DSN}
+      - ORACLE_HOST=${ORACLE_HOST}
+      - ORACLE_PORT=${ORACLE_PORT}
+      - ORACLE_SERVICE=${ORACLE_SERVICE}
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+    volumes:
+      - ./oracle-sync:/app
+    command: ["./wait-for-it.sh", "clickhouse:9000", "--", "python", "sync.py"]
+    networks:
+      - analytics-network
+      - external-network  # For reaching Oracle server
+
+  cubejs:
+    build: ./cubejs
+    container_name: cubejs
+    depends_on:
+      - clickhouse
     ports:
-      - "8001:8000"
-    volumes:
-      - ./data/exports:/data/exports
+      - "4000:4000"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - CSV_DIR=/data/exports
-      - TASKS_CSV=tasks_daily.csv
-      - LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3:8b-instruct}  # Better model for M2 with 32GB RAM
-      - LLM_ENABLED=${LLM_ENABLED:-True}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://tasking-monitor.example.com}
-    depends_on:
-      - dbt
-      - ollama
+      - CUBEJS_DB_TYPE=clickhouse
+      - CUBEJS_DB_HOST=clickhouse
+      - CUBEJS_DB_NAME=${CLICKHOUSE_DB}
+      - CUBEJS_DB_USER=${CLICKHOUSE_USER}
+      - CUBEJS_DB_PASS=${CLICKHOUSE_PASSWORD}
+      - CUBEJS_API_SECRET=${CUBEJS_API_SECRET}
+      - CUBEJS_DEV_MODE=${CUBEJS_DEV_MODE}
+    volumes:
+      - ./cubejs/schema:/cube/schema
+      - ./cubejs/cube.js:/cube/cube.js
+    networks:
+      - analytics-network
 
-  # React Frontend
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
     ports:
-      - "3000:80"
+      - "3000:3000"
     environment:
-      - REACT_APP_API_URL=${API_URL:-http://localhost:8001/api}
-    depends_on:
-      - backend
-
-  # Scheduled Jobs Service
-  scheduler:
-    build:
-      context: ./scheduler
-      dockerfile: Dockerfile
+      - MB_DB_TYPE=h2
+      - MB_DB_FILE=/metabase-data/metabase.db
     volumes:
-      - ./dbt:/app/dbt
-      - ./data/exports:/data/exports
-    environment:
-      - DBT_ORACLE_USER=${DBT_ORACLE_USER}
-      - DBT_ORACLE_PASSWORD=${DBT_ORACLE_PASSWORD}
-      - DBT_ORACLE_HOST=${DBT_ORACLE_HOST}
-      - DBT_ORACLE_PORT=${DBT_ORACLE_PORT}
-      - DBT_ORACLE_SERVICE=${DBT_ORACLE_SERVICE}
-      - DBT_ORACLE_SCHEMA=${DBT_ORACLE_SCHEMA}
-    depends_on:
-      - dbt
+      - ./metabase/metabase-data:/metabase-data
+    networks:
+      - analytics-network
+
+networks:
+  analytics-network:
+    driver: bridge
+  external-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${EXTERNAL_NETWORK_SUBNET}
 
 volumes:
-  data:
-  ollama_data:
+  clickhouse-data:
