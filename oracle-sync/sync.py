@@ -5,7 +5,7 @@ import time
 import sys
 from datetime import datetime, timedelta
 import pandas as pd
-import cx_Oracle
+import oracledb  # Changed from cx_Oracle to oracledb
 import clickhouse_driver
 from dotenv import load_dotenv
 
@@ -41,11 +41,15 @@ os.environ['NLS_LANG'] = 'AMERICAN_AMERICA.AL32UTF8'
 def get_oracle_connection():
     """Establish connection to Oracle database"""
     try:
-        dsn = cx_Oracle.makedsn(ORACLE_HOST, ORACLE_PORT, service_name=ORACLE_SERVICE)
-        connection = cx_Oracle.connect(
+        # Initialize oracle client (only needed in thick mode)
+        # Commented out as we're using thin mode by default
+        # oracledb.init_oracle_client()
+
+        # Create connection using the thin mode (default)
+        connection = oracledb.connect(
             user=ORACLE_USER,
             password=ORACLE_PASSWORD,
-            dsn=dsn
+            dsn=f"{ORACLE_HOST}:{ORACLE_PORT}/{ORACLE_SERVICE}"
         )
         logger.info("Connected to Oracle database successfully")
         return connection
@@ -104,7 +108,8 @@ def sync_data(oracle_conn, clickhouse_client, batch_size=1000):
 
     try:
         cursor = oracle_conn.cursor()
-        cursor.execute(query, last_id=last_id)
+        # Bind parameter for query
+        cursor.execute(query, [last_id])  # Using list instead of named parameters
 
         total_records = 0
         while True:
