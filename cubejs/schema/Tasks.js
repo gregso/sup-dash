@@ -30,11 +30,23 @@ cube(`Tasks`, {
     }
   },
 
+    // Define the primary key at the cube level for better compatibility
+  primaryKey: {
+    sql: `act_aa_id`
+  },
+
+
   dimensions: {
+    actId: {
+      sql: `act_aa_id`,
+      type: `string`,
+      primaryKey: true, // Primary dimension
+      title: `Action ID`
+    },
+
     taskId: {
       sql: `task_id`,
       type: `string`,
-      primaryKey: true,
       title: `Task ID`
     },
 

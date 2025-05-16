@@ -45,18 +45,27 @@ services:
       - external-network  # For reaching Oracle server
 
   cubejs:
-    build: ./cubejs
+    image: cubejs/cube:latest
+    build:
+      context: ./cubejs
     container_name: cubejs
     depends_on:
       - clickhouse
     ports:
-      - "4000:4000"
+      - 4000:4000
+      - 15432:15432  # SQL API port
     environment:
+          # Default/primary database
       - CUBEJS_DB_TYPE=clickhouse
+      - CUBEJS_DB_NAME=support_analytics
       - CUBEJS_DB_HOST=clickhouse
-      - CUBEJS_DB_NAME=${CLICKHOUSE_DB}
-      - CUBEJS_DB_USER=${CLICKHOUSE_USER}
-      - CUBEJS_DB_PASS=${CLICKHOUSE_PASSWORD}
+      - CUBEJS_DB_USER=default
+      - CUBEJS_DB_PASS=default
+      - CUBEJS_DB_PORT=8123
+      - CUBEJS_PG_SQL_PORT=15432      # SQL API credential
+      - CUBEJS_SQL_USER=cube          # SQL API credential
+      - CUBEJS_SQL_PASSWORD=cube
+
       - CUBEJS_API_SECRET=${CUBEJS_API_SECRET}
       - CUBEJS_DEV_MODE=${CUBEJS_DEV_MODE}
     volumes:
