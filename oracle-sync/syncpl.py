@@ -17,7 +17,7 @@ logger = logging.getLogger("sync")
 load_dotenv()
 
 def sync_oracle_to_clickhouse():
-    """Synchronize data from Oracle to ClickHouse using polars with explicit schema definition"""
+    """Synchronize data from Oracle to ClickHouse using polars with complete schema control"""
 
     # Get database configurations from environment
     oracle_user = os.getenv('ORACLE_USER')
@@ -52,33 +52,6 @@ def sync_oracle_to_clickhouse():
 
         logger.info(f"Last synced ID: {last_id}")
 
-        # Define explicit schema mapping for all columns
-        # This prevents schema inference issues with mixed data types
-        schema_mapping = {
-            'act_aa_id': pl.Utf8,           # String columns
-            'task_id': pl.Utf8,
-            'client': pl.Utf8,
-            'status12': pl.Utf8,
-            'group': pl.Utf8,
-            'company': pl.Utf8,
-            'position': pl.Utf8,
-            'job_classification': pl.Utf8,
-            'email': pl.Utf8,
-            'dept_descr': pl.Utf8,
-            'div_descr': pl.Utf8,
-            'liveissue': pl.Utf8,
-            'task_class': pl.Utf8,
-            'viewyn': pl.Utf8,
-            'actioncode12': pl.Utf8,
-            'actempl': pl.Utf8,
-            'assignedto': pl.Utf8,
-            'task_aa_id': pl.Utf8,
-            'product': pl.Utf8,
-            'pr_ac_sort': pl.Int32,         # Integer column
-            'createddatetime': pl.Datetime, # DateTime columns
-            'actdatetime': pl.Datetime
-        }
-
         # Connect to Oracle
         logger.info(f"Connecting to Oracle at {oracle_host}:{oracle_port}/{oracle_service}")
         dsn = f"{oracle_host}:{oracle_port}/{oracle_service}"
@@ -86,10 +59,8 @@ def sync_oracle_to_clickhouse():
         with oracledb.connect(user=oracle_user, password=oracle_password, dsn=dsn) as oracle_conn:
             cursor = oracle_conn.cursor()
 
-
-            no_of_days = 3*365
             # Query for data newer than the last synced ID
-            query = f"""
+            query = """
             SELECT
                 sta.AA_ID AS ACT_AA_ID,
                 stt.TASK_ID, stt.CLIENT, stt.STATUS12, stt.CREATEDDATETIME,
@@ -101,7 +72,7 @@ def sync_oracle_to_clickhouse():
             FROM SDRR_TMS_ACTIONS sta
             JOIN SDRR_TMS_TASKS stt ON stt.AA_ID = sta.TMS_TASK_ID
             LEFT JOIN SDRR_TMS_EMPLOYEE_INFO_VIEW steiv ON sta.ACTEMPL = steiv.EMPID
-            WHERE sta.AA_ID > :last_id AND sta.ACTDATETIME >= TRUNC(SYSDATE - {no_of_days})
+            WHERE sta.AA_ID > :last_id AND sta.ACTDATETIME >= TRUNC(SYSDATE - 3*360)
             ORDER BY sta.AA_ID
             """
 
@@ -118,68 +89,45 @@ def sync_oracle_to_clickhouse():
                 if not rows:
                     break
 
-                logger.info(f"Processing batch of {len(rows)} records with polars")
+                logger.info(f"Processing batch of {len(rows)} records")
 
-                # Two-step process to handle data type conversion safely with polars
+                # APPROACH: Convert rows to dictionary first, then construct dataframe
+                # This bypasses Polars' schema inference completely
 
-                # Step 1: Create a polars DataFrame from rows with row orientation
-                # We won't use schema here initially to avoid conversion errors
-                raw_df = pl.DataFrame(rows, schema=None, orient="row")
-                raw_df.columns = columns
+                # Convert Oracle rows to list of dictionaries with explicit type handling
+                dict_records = []
+                for row in rows:
+                    record = {}
+                    for i, col in enumerate(columns):
+                        value = row[i]
 
-                # Step 2: Convert each column to the appropriate type using expressions
-                # This allows more flexible handling of type conversion errors
-                expressions = []
-
-                # Add expressions for each column with appropriate type conversion
-                for col in raw_df.columns:
-                    if col in schema_mapping:
-                        target_type = schema_mapping[col]
-
-                        if target_type == pl.Int32:
-                            # For integers, handle nulls and conversion errors
-                            expressions.append(
-                                pl.col(col).fill_null(0).cast(pl.Int32, strict=False)
-                            )
-                        elif target_type == pl.Datetime:
-                            # For datetimes, use specialized conversion
-                            expressions.append(
-                                pl.col(col).cast(pl.Datetime, strict=False)
-                            )
-                        elif target_type == pl.Utf8:
-                            # For strings, ensure all values are strings and handle nulls
-                            expressions.append(
-                                pl.col(col).cast(pl.Utf8, strict=False).fill_null("")
-                            )
+                        # Handle specific column types
+                        if col == 'pr_ac_sort':
+                            record[col] = int(value) if value is not None else 0
+                        elif col in ['createddatetime', 'actdatetime']:
+                            # Keep datetime objects as they are
+                            record[col] = value
                         else:
-                            # Default handling for other types
-                            expressions.append(
-                                pl.col(col).cast(target_type, strict=False)
-                            )
-                    else:
-                        # If column not in schema, pass through as is
-                        expressions.append(pl.col(col))
+                            # Ensure all other fields are strings
+                            record[col] = str(value) if value is not None else ""
 
-                # Create new DataFrame with proper types
-                df = raw_df.select(expressions)
+                    dict_records.append(record)
 
-                # Convert to dictionary records for insertion
-                records = df.to_dicts()
-
-                # Insert into ClickHouse
+                # Insert into ClickHouse directly using the dictionary records
+                # This bypasses Polars completely for this case
                 try:
-                    logger.info(f"Inserting {len(records)} records into ClickHouse")
+                    logger.info(f"Inserting {len(dict_records)} records into ClickHouse")
                     clickhouse.execute(
                         f"INSERT INTO {clickhouse_db}.support_tasks ({', '.join(columns)}) VALUES",
-                        records
+                        dict_records
                     )
-                    total_records += len(records)
+                    total_records += len(dict_records)
                     logger.info(f"Successfully inserted batch, total: {total_records}")
                 except Exception as e:
                     logger.error(f"Error inserting batch into ClickHouse: {e}")
-                    if records:
-                        logger.error(f"Sample record: {records[0]}")
-                        logger.error(f"Types: {[(k, type(v)) for k, v in records[0].items()]}")
+                    if dict_records:
+                        logger.error(f"Sample record: {dict_records[0]}")
+                        logger.error(f"Types: {[(k, type(v)) for k, v in dict_records[0].items()]}")
                     raise
 
             logger.info(f"Sync completed successfully. Total records: {total_records}")
