@@ -187,7 +187,7 @@ def main():
         if os.environ.get('DOCKER_CONTAINER'):
             while True:
                 logger.info("Waiting 5 minutes before next sync...")
-                time.sleep(300)  # 5 minutes
+                time.sleep(3600)  # 3600 seconds is 1 hour
                 sync_data(oracle_conn, clickhouse_client)
 
     except Exception as e:

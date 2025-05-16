@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Install required OS dependencies
 RUN apt-get update && apt-get install -y \
@@ -21,6 +21,7 @@ RUN rm instantclient-basic-linux.x64-19.26.0.0.0dbru.zip
 
 # Set Oracle environment variables
 ENV ORACLE_HOME=/opt/oracle/instantclient_19_26
+ENV DOCKER_CONTAINER=1
 ENV LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
 ENV PATH=$ORACLE_HOME:$PATH
 # Set working directory
