@@ -78,7 +78,9 @@ def get_last_sync_id(clickhouse_client):
         result = clickhouse_client.execute(
             f"SELECT MAX(act_aa_id) FROM {CLICKHOUSE_DB}.support_tasks"
         )
-        last_id = result[0][0] if result[0][0] else ""
+        last_id = result[0][0] if result[0][0] else 0
+        if last_id is None:
+            last_id = 0
         logger.info(f"Last synced ID: {last_id}")
         return last_id
     except Exception as e:
@@ -114,6 +116,7 @@ def sync_data(oracle_conn, clickhouse_client, batch_size=1000):
         total_records = 0
         while True:
             rows = cursor.fetchmany(batch_size)
+            print(f"Fetched {len(rows)} rows from Oracle")
             if not rows:
                 break
 
@@ -197,3 +200,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# modssss...

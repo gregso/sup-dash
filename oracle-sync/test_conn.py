@@ -31,7 +31,9 @@ ORACLE_SCHEMA = os.getenv('ORACLE_SCHEMA', '')
 
 CLICKHOUSE_HOST = os.getenv('CLICKHOUSE_HOST', 'clickhouse')
 CLICKHOUSE_USER = os.getenv('CLICKHOUSE_USER', 'default')
-CLICKHOUSE_PASSWORD = os.getenv('CLICKHOUSE_PASSWORD', '')
+CLICKHOUSE_PASSWORD = os.getenv('CLICKHOUSE_PASSWORD', 'default')
+print("PASS: ", CLICKHOUSE_PASSWORD)
+
 CLICKHOUSE_DB = os.getenv('CLICKHOUSE_DB', 'support_analytics')
 
 def test_oracle_connection():
@@ -127,7 +129,7 @@ def test_oracle_connection():
 def test_clickhouse_connection():
     """Test connection to ClickHouse database with detailed logging"""
     logger.info("🔍 Testing ClickHouse connection...")
-    logger.debug(f"ClickHouse connection parameters: HOST={CLICKHOUSE_HOST}, USER={CLICKHOUSE_USER}, DB={CLICKHOUSE_DB}")
+    logger.debug(f"ClickHouse connection parameters: HOST={CLICKHOUSE_HOST}, USER={CLICKHOUSE_USER}, PASSWORD={CLICKHOUSE_PASSWORD}, DB={CLICKHOUSE_DB}")
 
     try:
         # Attempt to establish connection
