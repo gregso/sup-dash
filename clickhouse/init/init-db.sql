@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS support_analytics.support_tasks (
     div_descr String,
     liveissue String,
     task_class String,
-    pr_ac_sort UInt32,
+    pr_ac_sort Int32,
     viewyn String,
     actdatetime DateTime,
     actioncode12 String,
