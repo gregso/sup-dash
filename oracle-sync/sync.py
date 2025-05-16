@@ -102,7 +102,7 @@ def sync_data(oracle_conn, clickhouse_client, batch_size=1000):
     FROM SDRR_TMS_ACTIONS sta
     JOIN SDRR_TMS_TASKS stt ON stt.AA_ID = sta.TMS_TASK_ID
     LEFT JOIN SDRR_TMS_EMPLOYEE_INFO_VIEW steiv ON sta.ACTEMPL = steiv.EMPID
-    WHERE sta.AA_ID > :last_id
+    WHERE sta.AA_ID > :last_id AND sta.ACTDATETIME >= TRUNC(SYSDATE - 120)
     ORDER BY sta.AA_ID
     """
 
