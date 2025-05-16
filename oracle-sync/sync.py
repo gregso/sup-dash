@@ -24,7 +24,7 @@ load_dotenv()
 
 # Database configuration
 ORACLE_USER = os.getenv('ORACLE_USER')
-ORACLE_PASSWORD = os.getenv('ORACLE_PASSWORD')
+ORACLE_SYNC_PASSWORD = os.getenv('ORACLE_SYNC_PASSWORD')
 ORACLE_HOST = os.getenv('ORACLE_HOST')
 ORACLE_PORT = os.getenv('ORACLE_PORT', '1521')
 ORACLE_SERVICE = os.getenv('ORACLE_SERVICE')
@@ -48,7 +48,7 @@ def get_oracle_connection():
         # Create connection using the thin mode (default)
         connection = oracledb.connect(
             user=ORACLE_USER,
-            password=ORACLE_PASSWORD,
+            password=ORACLE_SYNC_PASSWORD,
             dsn=f"{ORACLE_HOST}:{ORACLE_PORT}/{ORACLE_SERVICE}"
         )
         logger.info("Connected to Oracle database successfully")

@@ -2,19 +2,24 @@ version: '3.8'
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    build:
+      context: ./clickhouse
+    image: pipeline1/clickhouse
     container_name: clickhouse
+    env_file:
+      - ./.env
+      - ./clickhouse/.env
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native interface
     volumes:
-      - ./clickhouse/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/config.xml
-      - clickhouse-data:/var/lib/clickhouse
-    environment:
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/data:/var/lib/clickhouse/user_files
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
     networks:
       - analytics-network
 
@@ -25,7 +30,7 @@ services:
       - clickhouse
     environment:
       - ORACLE_USER=${ORACLE_USER}
-      - ORACLE_PASSWORD=${ORACLE_PASSWORD}
+      - ORACLE_SYNC_PASSWORD=${ORACLE_SYNC_PASSWORD}
       - ORACLE_DSN=${ORACLE_DSN}
       - ORACLE_HOST=${ORACLE_HOST}
       - ORACLE_PORT=${ORACLE_PORT}
