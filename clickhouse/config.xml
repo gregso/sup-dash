@@ -1,0 +1,17 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <max_memory_usage>8000000000</max_memory_usage>
+
+    <user_directories>
+        <users_xml>
+            <path>/etc/clickhouse-server/users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
