@@ -1,0 +1,4 @@
+oracledb==1.4.1  # Modern replacement for cx-oracle
+clickhouse-driver==0.2.6
+pandas==2.0.3
+python-dotenv==1.0.0
