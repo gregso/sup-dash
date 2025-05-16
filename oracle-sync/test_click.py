@@ -9,7 +9,7 @@ client = clickhouse_driver.Client(
 )
 
 # Test with a very simple query
-print(client.execute('SELECT 1'))
+print("Tasks count: ", client.execute('SELECT count(*) FROM support_analytics.support_tasks'))
 
 # Test with a simple table query
 print(client.execute('SHOW TABLES'))

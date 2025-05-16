@@ -3,3 +3,4 @@ clickhouse-driver==0.2.6
 numpy==1.26.3
 pandas==2.1.4
 python-dotenv==1.0.0
+polars==0.20.15

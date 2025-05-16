@@ -17,7 +17,7 @@ logger = logging.getLogger("sync")
 load_dotenv()
 
 def sync_oracle_to_clickhouse():
-    """Synchronize data from Oracle to ClickHouse using polars for data processing"""
+    """Synchronize data from Oracle to ClickHouse using polars with explicit schema definition"""
 
     # Get database configurations from environment
     oracle_user = os.getenv('ORACLE_USER')
@@ -31,18 +31,18 @@ def sync_oracle_to_clickhouse():
     clickhouse_password = os.getenv('CLICKHOUSE_PASSWORD', 'default')
     clickhouse_db = os.getenv('CLICKHOUSE_DB', 'support_analytics')
 
-    # Step 1: Connect to ClickHouse and get the last synced ID
     try:
+        # Connect to ClickHouse
         logger.info(f"Connecting to ClickHouse at {clickhouse_host}")
         clickhouse = clickhouse_driver.Client(
             host=clickhouse_host,
             user=clickhouse_user,
             password=clickhouse_password,
             database=clickhouse_db,
-            settings={'use_numpy': False}  # Disable numpy integration for better compatibility
+            settings={'use_numpy': False}
         )
 
-        # Get last synced ID with error handling
+        # Get last synced ID
         try:
             result = clickhouse.execute(f"SELECT MAX(act_aa_id) FROM {clickhouse_db}.support_tasks")
             last_id = result[0][0] if result[0][0] else 0
@@ -51,20 +51,44 @@ def sync_oracle_to_clickhouse():
             last_id = 0
 
         logger.info(f"Last synced ID: {last_id}")
-    except Exception as e:
-        logger.error(f"Failed to connect to ClickHouse: {e}")
-        return 0
 
-    # Step 2: Connect to Oracle and fetch new data
-    try:
+        # Define explicit schema mapping for all columns
+        # This prevents schema inference issues with mixed data types
+        schema_mapping = {
+            'act_aa_id': pl.Utf8,           # String columns
+            'task_id': pl.Utf8,
+            'client': pl.Utf8,
+            'status12': pl.Utf8,
+            'group': pl.Utf8,
+            'company': pl.Utf8,
+            'position': pl.Utf8,
+            'job_classification': pl.Utf8,
+            'email': pl.Utf8,
+            'dept_descr': pl.Utf8,
+            'div_descr': pl.Utf8,
+            'liveissue': pl.Utf8,
+            'task_class': pl.Utf8,
+            'viewyn': pl.Utf8,
+            'actioncode12': pl.Utf8,
+            'actempl': pl.Utf8,
+            'assignedto': pl.Utf8,
+            'task_aa_id': pl.Utf8,
+            'product': pl.Utf8,
+            'pr_ac_sort': pl.Int32,         # Integer column
+            'createddatetime': pl.Datetime, # DateTime columns
+            'actdatetime': pl.Datetime
+        }
+
+        # Connect to Oracle
         logger.info(f"Connecting to Oracle at {oracle_host}:{oracle_port}/{oracle_service}")
         dsn = f"{oracle_host}:{oracle_port}/{oracle_service}"
 
         with oracledb.connect(user=oracle_user, password=oracle_password, dsn=dsn) as oracle_conn:
             cursor = oracle_conn.cursor()
 
-            # Query for data newer than the last synced ID and not older than predefind # of days
+
             no_of_days = 3*365
+            # Query for data newer than the last synced ID
             query = f"""
             SELECT
                 sta.AA_ID AS ACT_AA_ID,
@@ -80,16 +104,13 @@ def sync_oracle_to_clickhouse():
             WHERE sta.AA_ID > :last_id AND sta.ACTDATETIME >= TRUNC(SYSDATE - {no_of_days})
             ORDER BY sta.AA_ID
             """
-            logger.info("Executing Oracle query")
-            logger.info(f"Query: {query}")
-
 
             logger.info("Executing Oracle query")
             cursor.execute(query, [last_id])
             columns = [col[0].lower() for col in cursor.description]
 
             # Process data in batches
-            batch_size = 20000
+            batch_size = 5000
             total_records = 0
 
             while True:
@@ -97,40 +118,55 @@ def sync_oracle_to_clickhouse():
                 if not rows:
                     break
 
-                # Step 3: Use polars to process the data with proper typing
                 logger.info(f"Processing batch of {len(rows)} records with polars")
 
-                # Create a polars DataFrame from the rows
-                df = pl.DataFrame(rows, schema=columns)
+                # Two-step process to handle data type conversion safely with polars
 
-                # Fix data types - critical for resolving encoding issues
-                # Handle the Int32 type explicitly for pr_ac_sort
-                if 'pr_ac_sort' in df.columns:
-                    df = df.with_columns(
-                        pl.col('pr_ac_sort')
-                        .cast(pl.Int32, strict=False)
-                        .fill_null(0)
-                    )
+                # Step 1: Create a polars DataFrame from rows with row orientation
+                # We won't use schema here initially to avoid conversion errors
+                raw_df = pl.DataFrame(rows, schema=None, orient="row")
+                raw_df.columns = columns
 
-                # Handle datetime columns
-                datetime_cols = ['createddatetime', 'actdatetime']
-                for col in datetime_cols:
-                    if col in df.columns:
-                        df = df.with_columns(
-                            pl.col(col).cast(pl.Datetime, strict=False)
-                        )
+                # Step 2: Convert each column to the appropriate type using expressions
+                # This allows more flexible handling of type conversion errors
+                expressions = []
 
-                # Handle null values in string columns
-                string_cols = [c for c in df.columns if c not in ['pr_ac_sort'] + datetime_cols]
-                for col in string_cols:
-                    df = df.with_columns(
-                        pl.col(col).fill_null("")
-                    )
+                # Add expressions for each column with appropriate type conversion
+                for col in raw_df.columns:
+                    if col in schema_mapping:
+                        target_type = schema_mapping[col]
 
-                # Step 4: Convert to Python dictionaries with proper types for ClickHouse
+                        if target_type == pl.Int32:
+                            # For integers, handle nulls and conversion errors
+                            expressions.append(
+                                pl.col(col).fill_null(0).cast(pl.Int32, strict=False)
+                            )
+                        elif target_type == pl.Datetime:
+                            # For datetimes, use specialized conversion
+                            expressions.append(
+                                pl.col(col).cast(pl.Datetime, strict=False)
+                            )
+                        elif target_type == pl.Utf8:
+                            # For strings, ensure all values are strings and handle nulls
+                            expressions.append(
+                                pl.col(col).cast(pl.Utf8, strict=False).fill_null("")
+                            )
+                        else:
+                            # Default handling for other types
+                            expressions.append(
+                                pl.col(col).cast(target_type, strict=False)
+                            )
+                    else:
+                        # If column not in schema, pass through as is
+                        expressions.append(pl.col(col))
+
+                # Create new DataFrame with proper types
+                df = raw_df.select(expressions)
+
+                # Convert to dictionary records for insertion
                 records = df.to_dicts()
 
-                # Step 5: Insert the data into ClickHouse
+                # Insert into ClickHouse
                 try:
                     logger.info(f"Inserting {len(records)} records into ClickHouse")
                     clickhouse.execute(
@@ -142,9 +178,7 @@ def sync_oracle_to_clickhouse():
                 except Exception as e:
                     logger.error(f"Error inserting batch into ClickHouse: {e}")
                     if records:
-                        # Log sample record to help debug
                         logger.error(f"Sample record: {records[0]}")
-                        # Log types to identify encoding issues
                         logger.error(f"Types: {[(k, type(v)) for k, v in records[0].items()]}")
                     raise
 
@@ -153,6 +187,8 @@ def sync_oracle_to_clickhouse():
 
     except Exception as e:
         logger.error(f"Sync failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return 0
 
 def main():
@@ -165,7 +201,7 @@ def main():
         except Exception as e:
             logger.error(f"Sync process encountered an error: {e}")
 
-        # Sleep for an hour before next sync if running in container
+        # Sleep before next sync if running in container
         if os.environ.get('DOCKER_CONTAINER'):
             logger.info("Waiting for next sync interval...")
             time.sleep(3600)  # 1 hour
