@@ -33,7 +33,9 @@ services:
       - ORACLE_SERVICE=${ORACLE_SERVICE}
       - CLICKHOUSE_HOST=clickhouse
       - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_PASSWORD=default
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_HTTP_PORT=8123
       - CLICKHOUSE_DB=${CLICKHOUSE_DB}
     volumes:
       - ./oracle-sync:/app

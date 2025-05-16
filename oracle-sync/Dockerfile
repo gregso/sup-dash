@@ -32,10 +32,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the wait script and make it executable
-COPY wait-for-it.sh .
-RUN chmod +x wait-for-it.sh
-
 # Copy the sync script
 COPY sync.py .
 
